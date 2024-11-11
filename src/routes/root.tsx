@@ -1,4 +1,3 @@
-import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Drawer,
@@ -9,103 +8,69 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer";
-import { IoIdCardSharp } from "react-icons/io5";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import Localbase from "localbase";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import UsersList from "@/components/UsersList";
 import AccessLogs from "@/components/AccessLogs";
 import { columns } from "@/components/columns";
+import { standardFetch } from "@/lib/axios";
+import axios from "axios";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-declare global {
-  interface Navigator {
-    serial: any;
-  }
+interface UsersType {
+  name: string;
+  cardId: string;
+  fingerprintId: string;
 }
 
 export default function Root() {
-  const [connected, setConnected] = useState(false);
-  const portRef = useRef();
-
-  const [cardId, setCardId] = useState("");
-
-  async function requestSerialDevice() {
-    try {
-      const usbVendorId = 9025;
-      const port = await navigator.serial.requestPort({
-        filters: [{ usbVendorId }],
-      });
-      portRef.current = port;
-      await port.open({ baudRate: 9600 });
-
-      const decoder = new TextDecoderStream();
-      port.readable.pipeTo(decoder.writable);
-      const reader = decoder.readable.getReader();
-
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) {
-          reader.releaseLock();
-          break;
-        }
-        buffer += value;
-
-        // Check if the buffer contains a newline character
-        let newlineIndex;
-        while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
-          // Extract the complete line (up to the newline character)
-          const line = buffer.slice(0, newlineIndex + 1).trim(); // `.trim()` to remove \n or \r\n
-          buffer = buffer.slice(newlineIndex + 1); // Remove processed line from buffer
-
-          // Process the complete line of data
-          console.log(`Received: ${line}`);
-        }
-      }
-    } catch (_e: unknown) {
-      alert("Failed to connect");
-      setConnected(false);
-    }
-  }
-
-  const { data: dbInstance } = useQuery({
-    queryKey: ["localDB"],
-    queryFn: async () => {
-      const localDB = new Localbase("db");
-      return localDB;
+  const keepServerAlive = useQuery({
+    queryKey: ["keepServerAlive"],
+    queryFn: async function () {
+      const { data } = await axios.get(
+        "https://google-sheet-attendance-system.onrender.com"
+      );
+      return data;
     },
   });
 
   const usersQuery = useQuery({
     queryKey: ["users"],
-    enabled: dbInstance !== undefined,
     queryFn: async function () {
-      const users = await dbInstance?.collection("users").get();
-      return users;
+      const { data: users } = await standardFetch.get<UsersType[]>("/", {
+        params: {
+          action: "get_users",
+          data1: "data1",
+          data2: "data2",
+        },
+      });
+
+      return users.slice(1);
     },
   });
 
   const accessLogsQuery = useQuery({
     queryKey: ["accessLogs"],
-    enabled: dbInstance !== undefined,
     queryFn: async function () {
-      const accessLogs = await dbInstance?.collection("accessLogs").get();
-      return accessLogs;
+      const { data: accessLogs } = await standardFetch.get("/", {
+        params: {
+          action: "get",
+          data1: "data1",
+          data2: "data2",
+        },
+      });
+      return accessLogs.slice(1);
     },
   });
 
   const addUserMutation = useMutation({
-    mutationFn: async function (user: { name: string; cardId: string }) {
-      const userExists = await dbInstance
-        ?.collection("users")
-        .doc({ cardId: user.cardId })
-        .get();
-      if (userExists) {
-        throw new Error("User already exists");
-      }
-      await dbInstance?.collection("users").add(user);
+    mutationFn: async function (name: string) {
+      await standardFetch.get("/", {
+        params: {
+          action: "name",
+          data1: name,
+          data2: "data2",
+        },
+      });
     },
     onSuccess: function () {
       usersQuery.refetch();
@@ -117,12 +82,16 @@ export default function Root() {
   });
 
   const removeUsersMutation = useMutation({
-    mutationFn: async function (datas: any[]) {
-      for (const data of datas) {
-        await dbInstance
-          ?.collection("users")
-          .doc({ cardId: data.cardId })
-          .delete();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mutationFn: async function (data: any[]) {
+      for (const user of data) {
+        await standardFetch.get("/", {
+          params: {
+            action: "remove",
+            data1: user.cardId,
+            data2: user.fingerprintId,
+          },
+        });
       }
     },
     onSuccess: function () {
@@ -131,23 +100,28 @@ export default function Root() {
     },
   });
 
-  useEffect(function () {
-    navigator.serial.addEventListener("connect", () => {
-      setConnected(true);
-    });
-
-    navigator.serial.addEventListener("disconnect", () => {
-      setConnected(false);
-    });
-  }, []);
+  if (keepServerAlive.isLoading) {
+    return (
+      <div className="h-screen flex justify-center items-center">
+        <p className="text-2xl">Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col">
-      <p className="text-center">{connected ? "Connected" : "Disconnected"}</p>
-      <Button onClick={requestSerialDevice} className="w-fit mx-auto mt-5">
-        Connect
+      <Button
+        className="w-fit mx-auto mt-5 disabled:opacity-50 disabled:!cursor-not-allowed"
+        onClick={() => {
+          usersQuery.refetch();
+          accessLogsQuery.refetch();
+        }}
+        disabled={usersQuery.isFetching || accessLogsQuery.isFetching}
+      >
+        {usersQuery.isFetching || accessLogsQuery.isFetching
+          ? "Refreshing"
+          : "Refresh"}
       </Button>
-
       <Drawer>
         <DrawerTrigger asChild>
           <Button variant="default" className="w-fit mx-auto mt-5">
@@ -162,9 +136,13 @@ export default function Root() {
               const form = e.currentTarget;
               const formData = new FormData(form);
               const name = formData.get("name") as string;
-              const cardId = formData.get("cardId") as string;
 
-              addUserMutation.mutateAsync({ name, cardId });
+              if (name.trim() === "") {
+                alert("Name field can not be empty");
+                return;
+              }
+
+              addUserMutation.mutateAsync(name);
               form.reset();
             }}
           >
@@ -181,18 +159,6 @@ export default function Root() {
                   placeholder="John Doe"
                 />
               </label>
-
-              <div className="flex justify-center items-center flex-col mt-5">
-                <p className="text-center text-lg">Scan card</p>
-                <input
-                  type="text"
-                  name="cardId"
-                  value={cardId}
-                  onChange={(e) => setCardId(e.currentTarget.value)}
-                  className="hidden"
-                />
-                <IoIdCardSharp size={200} color="green" />
-              </div>
             </div>
             <DrawerFooter>
               <Button type="submit" disabled={addUserMutation.isPending}>
