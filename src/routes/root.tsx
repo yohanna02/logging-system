@@ -14,7 +14,7 @@ import UsersList from "@/components/UsersList";
 import AccessLogs from "@/components/AccessLogs";
 import { columns } from "@/components/columns";
 import { standardFetch } from "@/lib/axios";
-import axios from "axios";
+// import axios from "axios";
 
 interface UsersType {
   name: string;
@@ -23,15 +23,15 @@ interface UsersType {
 }
 
 export default function Root() {
-  const keepServerAlive = useQuery({
-    queryKey: ["keepServerAlive"],
-    queryFn: async function () {
-      const { data } = await axios.get(
-        "https://google-sheet-attendance-system.onrender.com"
-      );
-      return data;
-    },
-  });
+  // const keepServerAlive = useQuery({
+  //   queryKey: ["keepServerAlive"],
+  //   queryFn: async function () {
+  //     const { data } = await axios.get(
+  //       "https://google-sheet-attendance-system.onrender.com"
+  //     );
+  //     return data;
+  //   },
+  // });
 
   const usersQuery = useQuery({
     queryKey: ["users"],
@@ -100,13 +100,13 @@ export default function Root() {
     },
   });
 
-  if (keepServerAlive.isLoading) {
-    return (
-      <div className="h-screen flex justify-center items-center">
-        <p className="text-2xl">Loading...</p>
-      </div>
-    );
-  }
+  // if (keepServerAlive.isLoading) {
+  //   return (
+  //     <div className="h-screen flex justify-center items-center">
+  //       <p className="text-2xl">Loading...</p>
+  //     </div>
+  //   );
+  // }
 
   return (
     <div className="flex flex-col">
